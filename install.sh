@@ -9,6 +9,9 @@ install -m 0755 "$project_dir/bin/mcp-workspace" "$install_dir/mcp-workspace"
 install -m 0644 "$project_dir/lib/launcher.js" "$install_dir/../lib/mcp-workspace/launcher.js"
 install -m 0644 "$project_dir/lib/devtools-core.js" "$install_dir/../lib/mcp-workspace/devtools-core.js"
 install -m 0644 "$project_dir/lib/devtools-server.js" "$install_dir/../lib/mcp-workspace/devtools-server.js"
+install -m 0644 "$project_dir/lib/host-control.js" "$install_dir/../lib/mcp-workspace/host-control.js"
+install -m 0644 "$project_dir/lib/devtools-v1.js" "$install_dir/../lib/mcp-workspace/devtools-v1.js"
+install -m 0644 "$project_dir/lib/jobs.js" "$install_dir/../lib/mcp-workspace/jobs.js"
 printf 'Installed: %s/mcp-workspace\n' "$install_dir"
 case ":$PATH:" in
   *":$install_dir:"*) ;;
