@@ -1,6 +1,6 @@
 {
   "name": "mcp-workspace",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One-command combined Filesystem and sandboxed Terminal MCP server with a Cloudflare Quick Tunnel",
   "bin": {
     "mcp-workspace": "./bin/mcp-workspace"
@@ -8,6 +8,8 @@
   "files": [
     "bin/mcp-workspace",
     "lib/launcher.js",
+    "lib/devtools-core.js",
+    "lib/devtools-server.js",
     "README.md"
   ],
   "keywords": [

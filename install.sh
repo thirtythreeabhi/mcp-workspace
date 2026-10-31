@@ -2,9 +2,13 @@
 set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+project_dir=$(cd -- "$script_dir" && pwd -P)
 install_dir=${MCP_WORKSPACE_INSTALL_DIR:-"$HOME/.local/bin"}
-mkdir -p "$install_dir"
-install -m 0755 "$script_dir/bin/mcp-workspace" "$install_dir/mcp-workspace"
+install -d "$install_dir" "$install_dir/../lib/mcp-workspace"
+install -m 0755 "$project_dir/bin/mcp-workspace" "$install_dir/mcp-workspace"
+install -m 0644 "$project_dir/lib/launcher.js" "$install_dir/../lib/mcp-workspace/launcher.js"
+install -m 0644 "$project_dir/lib/devtools-core.js" "$install_dir/../lib/mcp-workspace/devtools-core.js"
+install -m 0644 "$project_dir/lib/devtools-server.js" "$install_dir/../lib/mcp-workspace/devtools-server.js"
 printf 'Installed: %s/mcp-workspace\n' "$install_dir"
 case ":$PATH:" in
   *":$install_dir:"*) ;;

@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
-script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
-exec node "$script_dir/lib/launcher.js" "$@"
+source_path=${BASH_SOURCE[0]}
+while [[ -L "$source_path" ]]; do
+  source_dir=$(cd -P -- "$(dirname -- "$source_path")" && pwd)
+  target=$(readlink -- "$source_path")
+  if [[ "$target" = /* ]]; then source_path=$target; else source_path=$source_dir/$target; fi
+done
+script_dir=$(cd -P -- "$(dirname -- "$source_path")" && pwd)
+project_dir=$(cd -- "$script_dir/.." && pwd -P)
+launcher="$project_dir/lib/launcher.js"
+if [[ ! -f "$launcher" ]]; then launcher="$project_dir/lib/mcp-workspace/launcher.js"; fi
+if [[ ! -f "$launcher" ]]; then
+  printf 'mcp-workspace: launcher support file not found; rerun install.sh from the project checkout\n' >&2
+  exit 1
+fi
+exec node "$launcher" "$@"

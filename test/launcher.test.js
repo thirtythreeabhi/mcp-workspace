@@ -4,10 +4,19 @@ const assert = require('node:assert/strict');
 const net = require('node:net');
 const { createConfig, parsePort, checkPort, checkDependencies, mcpReady, VERSIONS } = require('../lib/launcher');
 
-test('dependency validation enforces Node 24 and required commands', () => {
+test('dependency validation enforces Node 24 and required commands', t => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-workspace-deps-test-'));
+  t.after(() => fs.rmSync(fakeBin, { recursive: true, force: true }));
+
   assert.throws(() => checkDependencies({ nodeVersion: '22.22.1', pathValue: '' }), /Node.js 24 or newer/);
   assert.throws(() => checkDependencies({ nodeVersion: '24.0.0', pathValue: '' }), /required command not found: npm/);
-  assert.doesNotThrow(() => checkDependencies({ nodeVersion: '24.0.0', pathValue: process.env.PATH }));
+  for (const name of ['npm', 'npx', 'cloudflared']) fs.writeFileSync(path.join(fakeBin, name), '');
+  assert.doesNotThrow(() => checkDependencies({ nodeVersion: '24.0.0', pathValue: fakeBin }));
+  fs.rmSync(path.join(fakeBin, 'cloudflared'));
+  assert.throws(() => checkDependencies({ nodeVersion: '24.0.0', pathValue: fakeBin }), /required command not found: cloudflared/);
 });
 
 test('configuration pins packages and retains sandbox boundaries', () => {
@@ -18,6 +27,8 @@ test('configuration pins packages and retains sandbox boundaries', () => {
   assert.match(servers.terminal.args[1], /@0\.3\.3$/);
   assert.ok(servers.filesystem.args.includes('/work'));
   assert.ok(servers.terminal.args.includes('--read-only'));
+  assert.equal(servers.developer.command, process.execPath);
+  assert.match(servers.developer.args[0], /devtools-server\.js$/);
   assert.equal(VERSIONS.supergateway, '4.2.1');
 });
 
@@ -41,7 +52,7 @@ test('MCP readiness requires initialize and both prefixed tool families', async 
     if (step > 1) assert.equal(options.headers['mcp-protocol-version'], '2025-11-25');
     if (step === 1) return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-11-25' } }), { status: 200, headers: { 'mcp-session-id': 'test' } });
     if (step === 2) return new Response(null, { status: 202 });
-    return new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: { tools: [{ name: 'filesystem_read_file' }, { name: 'terminal_run' }] } })}\n\n`, { status: 200 });
+    return new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: { tools: [{ name: 'filesystem_read_file' }, { name: 'terminal_run' }, { name: 'developer_code_search' }] } })}\n\n`, { status: 200 });
   };
   t.after(() => { global.fetch = original; });
   assert.equal(await mcpReady('http://127.0.0.1:8787/workspace/mcp'), true);
@@ -94,9 +105,15 @@ async function runWithMocks({ crash, signal } = {}) {
   const path = require('node:path');
   const children = {};
   let configDir;
+  let stdout = '';
   const oldExit = process.exitCode;
   const run = require('../lib/launcher').run({
-    checkDependencies() {}, checkPort: async () => {}, mcpReady: async () => true,
+    checkDependencies() {}, checkPort: async () => {},
+    mcpReady: async endpoint => {
+      if (crash === 'gateway-during-tunnel' && endpoint.startsWith('https://')) return new Promise(() => {});
+      return true;
+    },
+    writeOutput(message) { stdout += message; },
     start(command, args, logPath) {
       const child = mockChild();
       children[command] = child;
@@ -106,6 +123,10 @@ async function runWithMocks({ crash, signal } = {}) {
       } else {
         fs.writeFileSync(logPath, 'https://mock-tunnel.trycloudflare.com\n');
         if (crash === 'tunnel-start') setTimeout(() => child.emit('error', new Error('mock tunnel startup failure')), 20);
+        if (crash === 'gateway-during-tunnel') setTimeout(() => {
+          children.npx.exitCode = 1;
+          children.npx.emit('exit', 1, null);
+        }, 20);
       }
       return child;
     }
@@ -115,7 +136,7 @@ async function runWithMocks({ crash, signal } = {}) {
     const child = children[crash === 'gateway-runtime' ? 'npx' : 'cloudflared'];
     if (child) { child.exitCode = 1; child.emit('exit', 1, null); }
   }, 40);
-  try { await run; return { code: process.exitCode, children, configDir, exists: fs.existsSync(configDir) }; }
+  try { await run; return { code: process.exitCode, children, configDir, stdout, exists: fs.existsSync(configDir) }; }
   finally { process.exitCode = oldExit; }
 }
 
@@ -127,10 +148,20 @@ test('gateway and tunnel startup failures exit nonzero and clean temporary files
   }
 });
 
+test('gateway crash while tunnel initializes cannot be printed as an MCP URL', async () => {
+  const result = await runWithMocks({ crash: 'gateway-during-tunnel' });
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '', 'must not announce a URL when the gateway crashed');
+  assert.equal(result.exists, false, 'temporary files should be removed');
+  assert.equal(result.children.cloudflared.signalCode, 'SIGTERM');
+});
+
 test('gateway and tunnel runtime crashes stop the peer and clean temporary files', async () => {
   for (const scenario of ['gateway-runtime', 'tunnel-runtime']) {
     const result = await runWithMocks({ crash: scenario });
     assert.equal(result.code, 1, `${scenario} should return failure`);
+    assert.match(result.stdout, /^MCP URL: https:\/\/mock-tunnel\.trycloudflare\.com\/workspace\/mcp\n/,
+      'valid tunnel readiness should still announce the real MCP URL');
     assert.equal(result.exists, false, 'temporary files should be removed');
     const peer = result.children[scenario === 'gateway-runtime' ? 'cloudflared' : 'npx'];
     assert.equal(peer.signalCode, 'SIGTERM', 'supervisor should terminate the other process');

@@ -1,12 +1,12 @@
 # mcp-workspace
 
-Start combined Filesystem and sandboxed Terminal MCP tools for the directory you are in, then expose them with a temporary Cloudflare Quick Tunnel.
+Start combined Filesystem, sandboxed Terminal, and workspace-scoped Developer MCP tools for the directory you are in, then expose them with a temporary Cloudflare Quick Tunnel.
 
 ```bash
 cd ~/projects/my-app && mcp-workspace
 ```
 
-The launcher prints a Streamable HTTP URL after it confirms MCP initialization and discovers tools from both underlying servers. Keep the terminal open while using it; press **Ctrl+C** to stop both child processes. Each run uses the current directory and gets a new temporary URL.
+The launcher prints a Streamable HTTP URL after it confirms MCP initialization and discovers tools from all three underlying servers. Keep the terminal open while using it; press **Ctrl+C** to stop both child processes. Each run uses the current directory and gets a new temporary URL.
 
 ## Prerequisites
 
@@ -35,9 +35,22 @@ The launcher uses these exact published versions:
 
 ## Startup and shutdown
 
-The launcher checks Node.js and required commands, validates the port, and fails if the local port is occupied. It writes the gateway configuration to a private temporary directory, starts the gateway, and waits for a successful MCP initialize and `tools/list` response that includes both `filesystem_` and `terminal_` tools. It then starts Cloudflare Tunnel and checks the public URL with the same MCP exchange before announcing readiness. Startup checks time out after 90 seconds and print relevant diagnostics.
+The launcher checks Node.js and required commands, validates the port, and fails if the local port is occupied. It writes the gateway configuration to a private temporary directory, starts the gateway, and waits for a successful MCP initialize and `tools/list` response that includes `filesystem_`, `terminal_`, and `developer_` tools. It then starts Cloudflare Tunnel and checks the public URL with the same MCP exchange before announcing readiness. Startup checks time out after 90 seconds and print relevant diagnostics.
 
 The launcher monitors both child processes. If either stops, it terminates its peer and exits nonzero. SIGINT and SIGTERM stop both process groups, wait briefly, force-stop any survivor, and remove temporary configuration and logs.
+
+## Developer tools (v0.2.0)
+
+The new first-party stdio developer server adds six workspace-scoped tools with explicit descriptions and structured JSON responses:
+
+- `developer_code_search` — literal content search with file/extension filters and line numbers (bounded; skips dependencies and generated directories).
+- `developer_repo_status` — read branch, HEAD, and staged/unstaged change summaries.
+- `developer_repo_diff` — bounded, read-only staged or unstaged Git diff.
+- `developer_file_hash` — get SHA-256 for a regular file before changing it.
+- `developer_edit_checked` — exact-match edits with `expectedSha256`, conflict detection, and optional `dryRun`. Changes are written using a same-directory temporary file and rename; this does not protect against noncooperating host editors racing after the final hash check.
+- `developer_workspace_diagnostics` — inspect workspace, platform and known sandbox limits.
+
+All developer paths are relative to the selected workspace; symlink paths and `.git` access through file editing are rejected. Files larger than 1 MB cannot be edited by `developer_edit_checked`. Git operations are read-only. No new network, shell, or host Docker capability has been added.
 
 ## Protocol compatibility
 
@@ -64,7 +77,7 @@ Supergateway 4.2.1 and the pinned servers expose the legacy MCP `initialize` / `
 
 ## Tests
 
-Run `npm test` for the local automated suite. It uses mocks and does not require a public tunnel.
+Run `npm test` for the local automated suite. It includes sandbox-safe developer tool checks and an actual stdio JSON-RPC exchange, plus mocked launcher supervision tests. It does not require a public tunnel. For an isolated installer smoke test run `MCP_WORKSPACE_INSTALL_DIR=/tmp/mcp-workspace-install/bin ./install.sh`, then execute the installed command with `--help` only if the launcher supports it; otherwise test the installed developer server through stdio. A real public Cloudflare tunnel cannot be exercised from the offline nanosandbox.
 
 To use a different local port:
 
