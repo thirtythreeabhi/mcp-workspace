@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  printf 'mcp-workspace: %s\n' "$*" >&2
+  exit 1
+}
+
+for command_name in node npm npx cloudflared; do
+  command -v "$command_name" >/dev/null 2>&1 || fail "required command not found: $command_name"
+done
+
+workspace=$(pwd -P)
+[[ -d "$workspace" ]] || fail "current directory is not a directory"
+
+port=${MCP_WORKSPACE_PORT:-8787}
+[[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )) || fail "MCP_WORKSPACE_PORT must be a TCP port from 1 to 65535"
+node - "$port" <<'NODE'
+const net = require('node:net');
+const port = Number(process.argv[2]);
+const server = net.createServer();
+server.once('error', () => {
+  console.error(`mcp-workspace: port ${port} is already in use; set MCP_WORKSPACE_PORT to another port`);
+  process.exit(1);
+});
+server.listen(port, '127.0.0.1', () => server.close());
+NODE
+
+node_path=$(command -v node)
+node_real=$(readlink -f "$node_path" 2>/dev/null || realpath "$node_path" 2>/dev/null || printf '%s' "$node_path")
+node_bin_dir=$(dirname "$node_real")
+node_root=$(dirname "$node_bin_dir")
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/mcp-workspace.XXXXXX")
+config_file="$temp_dir/servers.json"
+gateway_log="$temp_dir/gateway.log"
+tunnel_log="$temp_dir/cloudflared.log"
+gateway_pid=
+tunnel_pid=
+
+cleanup() {
+  set +e
+  [[ -n "$tunnel_pid" ]] && kill "$tunnel_pid" 2>/dev/null
+  [[ -n "$gateway_pid" ]] && kill "$gateway_pid" 2>/dev/null
+  [[ -n "$tunnel_pid" ]] && wait "$tunnel_pid" 2>/dev/null
+  [[ -n "$gateway_pid" ]] && wait "$gateway_pid" 2>/dev/null
+  rm -rf -- "$temp_dir"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+node - "$workspace" "$node_root" "$port" "$config_file" <<'NODE'
+const fs = require('node:fs');
+const [workspace, nodeRoot, port, output] = process.argv.slice(2);
+const config = {
+  host: '127.0.0.1',
+  port: Number(port),
+  outputTransport: 'streamableHttp',
+  mcpServers: {
+    workspace: {
+      mcpServers: {
+        filesystem: {
+          command: 'npx',
+          args: ['--yes', '@modelcontextprotocol/server-filesystem@2.1.0', workspace],
+          toolPrefix: 'filesystem_'
+        },
+        terminal: {
+          command: 'npx',
+          args: [
+            '--yes', 'nanosandbox-mcp@0.3.1',
+            '--workspace', workspace,
+            '--read-only', nodeRoot,
+            '--timeout', '180',
+            '--memory', '1G',
+            '--max-output', '1M',
+            '--max-concurrent', '1',
+            '--no-cache',
+            '--env', `PATH=${nodeRoot}/bin:/usr/bin:/bin`
+          ],
+          toolPrefix: 'terminal_'
+        }
+      }
+    }
+  }
+};
+if (process.platform === 'linux') {
+  config.mcpServers.workspace.mcpServers.terminal.args.push('--cpu', '2', '--max-pids', '128');
+}
+fs.writeFileSync(output, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+NODE
+
+npx --yes supergateway@4.2.1 --config "$config_file" >"$gateway_log" 2>&1 &
+gateway_pid=$!
+cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:$port" >"$tunnel_log" 2>&1 &
+tunnel_pid=$!
+
+printf 'Starting combined MCP servers for: %s\n' "$workspace"
+printf 'Filesystem access: %s\n' "$workspace"
+printf 'Terminal sandbox: workspace only; network disabled; 180-second command limit\n'
+printf 'Authentication: disabled\n\n'
+
+url=
+for _ in $(seq 1 90); do
+  url=$(sed -nE 's/.*(https:\/\/[[:alnum:]-]+\.trycloudflare\.com).*/\1/p' "$tunnel_log" | head -n 1 || true)
+  [[ -n "$url" ]] && break
+  if ! kill -0 "$gateway_pid" 2>/dev/null; then
+    cat "$gateway_log" >&2
+    fail "combined MCP gateway stopped during startup"
+  fi
+  if ! kill -0 "$tunnel_pid" 2>/dev/null; then
+    cat "$tunnel_log" >&2
+    fail "Cloudflare Tunnel stopped during startup"
+  fi
+  sleep 1
+done
+
+if [[ -z "$url" ]]; then
+  cat "$gateway_log" >&2
+  cat "$tunnel_log" >&2
+  fail "timed out waiting for the Cloudflare URL"
+fi
+
+printf 'MCP URL: %s/workspace/mcp\n' "$url"
+printf 'Transport: Streamable HTTP\n'
+printf 'Leave this terminal running. Press Ctrl+C to stop both servers.\n\n'
+printf '%s\n' '--- MCP gateway and tunnel logs ---'
+tail -f "$gateway_log" "$tunnel_log" &
+log_pid=$!
+wait "$log_pid"
