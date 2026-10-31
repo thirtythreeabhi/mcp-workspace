@@ -11,7 +11,7 @@ The launcher prints one Streamable HTTP URL for Groq Playground. Keep the termin
 
 ## Install
 
-Requirements: Linux or macOS, Node.js/npm, `cloudflared`, and a working `npx` connection to npm on first run.
+Requirements: Linux or macOS, Node.js/npm, [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), and a working `npx` connection to npm on first run.
 
 ```bash
 git clone https://github.com/thirtythreeabhi/mcp-workspace.git
