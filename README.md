@@ -9,9 +9,25 @@ mcp-workspace
 
 The launcher prints one Streamable HTTP URL for Groq Playground. Keep the terminal open while using the MCP server; press **Ctrl+C** to stop it. Each run uses the current directory and produces a new temporary URL.
 
-## Install
+## Install with npm
 
-Requirements: Linux or macOS, Node.js/npm, [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), and a working `npx` connection to npm on first run.
+Requirements: Linux or macOS, Node.js 24 or newer, npm, [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), and a working `npx` connection to npm on first run.
+
+```bash
+npm install -g mcp-workspace
+cd ~/projects/my-app
+mcp-workspace
+```
+
+npm installs the `mcp-workspace` command globally. On first run, it downloads the pinned MCP gateway and server packages with `npx`.
+
+Until the first npm registry release is published, install the same CLI directly from GitHub:
+
+```bash
+npm install -g github:thirtythreeabhi/mcp-workspace
+```
+
+## Install from GitHub
 
 ```bash
 git clone https://github.com/thirtythreeabhi/mcp-workspace.git
