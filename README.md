@@ -1,70 +1,75 @@
 # mcp-workspace
 
-Start a combined Filesystem + Terminal MCP server for the directory you are in, then expose it through a temporary Cloudflare Quick Tunnel.
+Start combined Filesystem and sandboxed Terminal MCP tools for the directory you are in, then expose them with a temporary Cloudflare Quick Tunnel.
 
 ```bash
-cd ~/projects/my-app
-mcp-workspace
+cd ~/projects/my-app && mcp-workspace
 ```
 
-The launcher prints one Streamable HTTP URL for Groq Playground. Keep the terminal open while using the MCP server; press **Ctrl+C** to stop it. Each run uses the current directory and produces a new temporary URL.
+The launcher prints a Streamable HTTP URL after it confirms MCP initialization and discovers tools from both underlying servers. Keep the terminal open while using it; press **Ctrl+C** to stop both child processes. Each run uses the current directory and gets a new temporary URL.
 
-## Install with npm
+## Prerequisites
 
-Requirements: Linux or macOS, Node.js 24 or newer, npm, [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), and a working `npx` connection to npm on first run.
+- Linux or macOS
+- Node.js 24 or newer, npm, and `npx`
+- [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+- Network access to npm on first launch so `npx` can fetch the pinned packages
+
+Install the command from npm or GitHub:
 
 ```bash
 npm install -g mcp-workspace
-cd ~/projects/my-app
-mcp-workspace
-```
-
-npm installs the `mcp-workspace` command globally. On first run, it downloads the pinned MCP gateway and server packages with `npx`.
-
-Until the first npm registry release is published, install the same CLI directly from GitHub:
-
-```bash
+# or, until the npm release is published:
 npm install -g github:thirtythreeabhi/mcp-workspace
 ```
 
-## Install from GitHub
+Or clone this repository and run `./install.sh`. Ensure `~/.local/bin` is on `PATH`.
 
-```bash
-git clone https://github.com/thirtythreeabhi/mcp-workspace.git
-cd mcp-workspace
-./install.sh
-```
+## Pinned dependencies
 
-Make sure `~/.local/bin` is on `PATH`. Open a new terminal (or update the current shell's `PATH`) before running `mcp-workspace`.
+The launcher uses these exact published versions:
 
-The launcher fetches pinned versions on first run:
+- [Supergateway 4.2.1](https://www.npmjs.com/package/supergateway) for the Streamable HTTP gateway
+- [@modelcontextprotocol/server-filesystem 2.1.0](https://www.npmjs.com/package/%40modelcontextprotocol/server-filesystem), restricted to the current directory
+- [nanosandbox-mcp 0.3.3](https://www.npmjs.com/package/nanosandbox-mcp) for sandboxed terminal commands
 
-- [Supergateway](https://github.com/supercorp-ai/supergateway) 4.2.1 — combines the servers behind one Streamable HTTP URL.
-- [Official Filesystem MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem) 2.1.0 — restricted to the current directory.
-- [nanosandbox-mcp](https://github.com/Erio-Harrison/nanosandbox) 0.3.1 — runs Terminal commands in a sandbox restricted to the current directory.
+## Startup and shutdown
 
-## Groq Playground
+The launcher checks Node.js and required commands, validates the port, and fails if the local port is occupied. It writes the gateway configuration to a private temporary directory, starts the gateway, and waits for a successful MCP initialize and `tools/list` response that includes both `filesystem_` and `terminal_` tools. It then starts Cloudflare Tunnel and checks the public URL with the same MCP exchange before announcing readiness. Startup checks time out after 90 seconds and print relevant diagnostics.
 
-Add one MCP server with the URL printed by the launcher. Select **Streamable HTTP**. Leave authentication and custom headers blank. The tools appear with `filesystem_` and `terminal_` prefixes.
+The launcher monitors both child processes. If either stops, it terminates its peer and exits nonzero. SIGINT and SIGTERM stop both process groups, wait briefly, force-stop any survivor, and remove temporary configuration and logs.
+
+## Protocol compatibility
+
+Supergateway 4.2.1 and the pinned servers expose the legacy MCP `initialize` / `tools/list` exchange over Streamable HTTP. Readiness negotiates protocol version `2025-11-25`. A client that sends `2026-07-28` may be rejected by an MCP SDK that only lists earlier protocol versions; upgrading the launcher’s package pins does not automatically make every client protocol date compatible. The startup check catches a failed exchange and does not announce an unusable URL. The gateway and server SDKs must both implement the client’s requested protocol before that date is supported end to end.
 
 ## Defaults and limits
 
-- The local gateway binds to `127.0.0.1`; Cloudflare Tunnel forwards to it.
-- Authentication is disabled, as configured by the user.
-- Filesystem tools can read and write under the selected directory.
-- Terminal commands run in `nanosandbox-mcp`; the selected directory is writable, network access is disabled, command time is capped at 180 seconds, memory at 1 GB, output at 1 MB per stream, and concurrent commands at one. Linux also caps CPU and process count.
-- The Node.js installation directory is mounted read-only so commands such as `node --test` and `npm test` can use the installed runtime. Other host files and credentials are not deliberately mounted.
+- Gateway binds to `127.0.0.1`; Cloudflare Quick Tunnel forwards to it.
+- Authentication is intentionally disabled. Leave authentication and custom headers blank in your MCP client.
+- Filesystem tools can read and write only under the selected directory.
+- Terminal commands run in nanosandbox with the selected workspace writable and the Node.js installation read-only. Network access is disabled, command time is capped at 180 seconds, memory at 1 GB, output at 1 MB per stream, and concurrency at one. Linux also caps CPU and process count.
+- The launcher generates a new temporary URL each run and stores no credentials.
 
-**Unauthenticated Quick Tunnels are public.** Anyone who obtains the current URL can invoke the exposed tools while the launcher is running. Use this only for workspaces you are comfortable exposing, and stop the launcher when finished. Quick Tunnel URLs are temporary and change on later runs.
+**Unauthenticated Quick Tunnels are public.** Anyone who obtains the current URL can invoke the tools while the launcher is running. Use it only for workspaces you are comfortable exposing, and stop the launcher when finished.
 
-The launcher uses a temporary config file with mode `0600` and removes it on exit. No credentials are stored by this project.
+## Troubleshooting
 
-## Options
+- **Node.js version error:** install Node.js 24 or newer and reopen your terminal.
+- **Missing command:** install npm/Node.js or `cloudflared` and ensure it is on `PATH`.
+- **Port already in use:** choose another port, for example `MCP_WORKSPACE_PORT=8790 mcp-workspace`.
+- **Gateway or tool discovery timeout:** check npm connectivity and inspect the launcher error output; the startup check requires both underlying servers to initialize and publish tools.
+- **Unsupported protocol version:** configure the client to request `2025-11-25` if it supports version selection. If it only requests `2026-07-28`, this dependency set cannot promise compatibility; no authentication setting changes this protocol limitation.
+- **Tunnel timeout:** check `cloudflared` connectivity and retry. The launcher exits and cleans up if it cannot verify the URL.
 
-Set a different local port if `8787` is already in use:
+## Tests
+
+Run `npm test` for the local automated suite. It uses mocks and does not require a public tunnel.
+
+To use a different local port:
 
 ```bash
 MCP_WORKSPACE_PORT=8790 mcp-workspace
 ```
 
-The script only exposes the folder from which it is launched. It does not accept a workspace path argument.
+The script exposes only the directory from which it is launched and accepts no workspace path argument.
