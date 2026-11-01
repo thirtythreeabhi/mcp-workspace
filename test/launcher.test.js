@@ -32,6 +32,9 @@ test('configuration pins packages and retains sandbox boundaries', () => {
   assert.ok(servers.terminal.args.some(value => /@0\.3\.3$/.test(value)));
   assert.ok(servers.filesystem.args.includes('/work'));
   assert.ok(servers.terminal.args.includes('--read-only'));
+  assert.equal(c.mcpServers.video.command, process.execPath);
+  assert.equal(c.mcpServers.video.toolPrefix, 'video_');
+  assert.match(c.mcpServers.video.args[0], /video-server\.js$/);
   assert.equal(servers.developer.command, process.execPath);
   assert.match(servers.developer.args[0], /devtools-server\.js$/);
   assert.equal(VERSIONS.supergateway, '4.2.1');
@@ -230,6 +233,7 @@ test('ngrok launches with the assigned free static URL and supervises lifecycle'
   const result = await runWithMocks({ ngrok: true, assertParallel: false, crash: 'tunnel-runtime' });
   assert.equal(result.code, 1);
   assert.match(result.stdout, /MCP URL: https:\/\/assigned\.ngrok-free\.app\/workspace\/mcp/);
+  assert.match(result.stdout, /Video MCP URL: https:\/\/assigned\.ngrok-free\.app\/video\/mcp/);
   assert.match(result.stdout, /Tunnel mode: ngrok/);
   assert.equal(result.children.npx.signalCode, 'SIGTERM');
   assert.equal(result.exists, false);
@@ -263,4 +267,20 @@ test('SIGINT and SIGTERM terminate both children and remove temporary files', as
     assert.equal(result.children.npx.signalCode, 'SIGTERM');
     assert.equal(result.children.cloudflared.signalCode, 'SIGTERM');
   }
+});
+test('video endpoint readiness independently checks its ten prefixed tools', async t => {
+  const original=global.fetch;
+  let step=0;
+  global.fetch=async () => {
+    step++;
+    if(step===1)return new Response(JSON.stringify({jsonrpc:'2.0',id:1,result:{protocolVersion:'2025-11-25'}}),{status:200});
+    if(step===2)return new Response(null,{status:202});
+    return new Response('event: message\ndata: '+JSON.stringify({jsonrpc:'2.0',id:2,result:{tools:[
+      'capabilities','probe','preview_frame','contact_sheet','timeline_save','timeline_read',
+      'render_start','render_status','render_logs','render_cancel'
+    ].map(name=>({name:'video_'+name}))}})+'\n\n',{status:200});
+  };
+  t.after(()=>{global.fetch=original;});
+  assert.equal(await mcpReady('http://127.0.0.1:8787/video/mcp'),true);
+  assert.equal(step,3);
 });

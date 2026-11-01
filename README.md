@@ -1,12 +1,12 @@
 # mcp-workspace
 
-Start combined Filesystem, sandboxed Terminal, and workspace-scoped Developer MCP tools for the directory you are in. Expose them using a zero-setup Cloudflare Quick Tunnel, a named Cloudflare Tunnel, or a free static ngrok development hostname.
+Start combined Filesystem, sandboxed Terminal, and workspace-scoped Developer MCP tools, plus a separate video-editing MCP endpoint for the directory you are in. Expose them using a zero-setup Cloudflare Quick Tunnel, a named Cloudflare Tunnel, or a free static ngrok development hostname.
 
 ```bash
 cd ~/projects/my-app && mcp-workspace
 ```
 
-The launcher prints a Streamable HTTP URL only after it confirms local and public MCP initialization and discovers tools from all three underlying servers. Keep the terminal open while using it; press **Ctrl+C** to stop the supervised processes. Each run exposes the current directory. In default Quick Tunnel mode the URL changes on every launch; named Cloudflare or ngrok modes below keep the same hostname.
+The launcher prints two Streamable HTTP URLs only after it confirms local and public MCP initialization and discovers workspace and video tools. Keep the terminal open while using it; press **Ctrl+C** to stop the supervised processes. Each run exposes the current directory. In default Quick Tunnel mode the URL changes on every launch; named Cloudflare or ngrok modes below keep the same hostname.
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ The launcher uses these exact published versions:
 
 ## Startup and shutdown
 
-The launcher checks Node.js and required commands, validates the port, and fails if the local port is occupied. It writes the gateway configuration to a private temporary directory, then starts Supergateway and the selected tunnel provider **concurrently**. Local and public MCP initialize / `tools/list` probes also run concurrently, checking for `filesystem_`, `terminal_`, and the required named developer tools (including `developer_read_lines`, `developer_apply_patch`, and the host-maintenance tools). It announces the URL only after **both** probes succeed. Startup stages and elapsed time print to stderr. Both probes have 90-second readiness windows; they are no longer sequential. The pinned `npx` packages prefer the npm cache on repeat launches.
+The launcher checks Node.js and required commands, validates the port, and fails if the local port is occupied. It writes the gateway configuration to a private temporary directory, then starts Supergateway and the selected tunnel provider **concurrently**. Local and public MCP initialize / `tools/list` probes also run concurrently, checking both the workspace tools and the separate Video MCP tool list. It announces the URLs only after all local and public checks succeed. Startup stages and elapsed time print to stderr. Both probes have 90-second readiness windows; they are no longer sequential. The pinned `npx` packages prefer the npm cache on repeat launches.
 
 The launcher monitors both child processes. If either stops, it terminates its peer and exits nonzero. SIGINT and SIGTERM stop both process groups, wait briefly, force-stop any survivor, and remove temporary configuration and logs.
 
@@ -97,7 +97,52 @@ Add **`https://mcp.example.com/workspace/mcp`** to ChatGPT once. With this mode 
 
 **Security:** The stable URL is publicly reachable and authentication remains disabled by design. Anyone with that URL can invoke the exposed tools. Prefer launching in a single, deliberately chosen project workspace rather than your entire Downloads folder. Never run two different workspaces on the same stable endpoint without knowing which one ChatGPT will access.
 
-## Developer tools (v1.1.0)
+## Separate Video MCP — v1.2.0
+
+The same ngrok or Cloudflare tunnel serves two MCP endpoints on one local port:
+
+- **Workspace:** `https://YOUR-ASSIGNED-DOMAIN/workspace/mcp` — unchanged filesystem, terminal, developer tools
+- **Video:** `https://YOUR-ASSIGNED-DOMAIN/video/mcp` — a separate set of ten tools with the `video_` prefix
+
+You can add the video endpoint as a second ChatGPT custom MCP server. **Authentication stays disabled** on both endpoints. You do not need a second ngrok account, domain, tunnel or local port. Supergateway routes the paths, and the launcher verifies both endpoints before announcing readiness.
+
+Install FFmpeg/FFprobe on Ubuntu for video tools: `sudo apt install ffmpeg` (include libx264 and AAC encoders).
+
+Video tools:
+
+- `video_capabilities` — check installed FFmpeg and FFprobe
+- `video_probe` — inspect duration, resolution, codecs and audio
+- `video_preview_frame` / `video_contact_sheet` — return a single JPEG frame or an eight-frame visual montage
+- `video_timeline_save` / `video_timeline_read` — save and edit JSON timelines with SHA-256 checks
+- `video_render_start` / `video_render_status` / `video_render_logs` / `video_render_cancel` — render, monitor and cancel background MP4 jobs
+
+Example editable timeline:
+
+~~~json
+{
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "clips": [
+    { "path": "recording.mp4", "start": 2, "end": 8, "speed": 1 },
+    { "path": "recording.mp4", "start": 8, "end": 16, "speed": 1.5 }
+  ]
+}
+~~~
+
+Save it as `demo.timeline.json` and render to a **new** file like `demo-edited.mp4`. The parent output directory must exist. Read video results using the existing Filesystem MCP or your local video player; this endpoint does not yet transfer MP4 bytes directly to ChatGPT.
+
+The initial release supports trimming, joining, reordering, speed adjustments and retaining existing audio (adding silence when a clip has none). Clips are normalized and exported as MP4/libx264/AAC. Text overlays, crossfades, subtitles, separate voiceover tracks and Kdenlive project export are not yet implemented.
+
+Inputs and outputs must stay inside the selected workspace; symlinks, path traversal and access to Git internals are rejected. Supported source extensions: MP4/MOV/MKV/WebM/AVI/M4V. Outputs never overwrite an existing MP4. Limits: 24 clips, 30 minutes output, 0.5–2× speed, max 1920×1080; one render worker per workspace, with a two-hour deadline. Render jobs continue after MCP sessions disconnect and persist across gateway reloads. Their records, logs and temporary files live inside ignored `.mcp-video/`.
+
+**Risk:** This is intentionally an unauthenticated endpoint invoking restricted host FFmpeg operations. Parameter restrictions and file-path checks are not a full codec sandbox. Prefer running in a narrow project directory and avoid processing untrusted files.
+
+### Activate when convenient
+
+The source changes do **not** hot-reload your active connection. When ready, stop `mcp-workspace`, run `cd ~/Downloads/mcp-workspace && ./install.sh`, and restart it with the same ngrok settings. Refresh the existing workspace connector, then connect the second URL ending in `/video/mcp`.
+
+## Developer tools (v1.2.0)
 
 The first-party stdio developer server exposes fourteen workspace-scoped tools plus two narrowly scoped host-maintenance tools with explicit descriptions and structured JSON responses:
 
@@ -112,8 +157,8 @@ The first-party stdio developer server exposes fourteen workspace-scoped tools p
 - `developer_project_overview` — inspect the top-level structure, detected stack, package manager, scripts, test infrastructure and Git state.
 - `developer_job_start` / `developer_job_status` / `developer_job_logs` / `developer_job_cancel` — launch, inspect and cancel managed nanosandbox jobs by ID, one concurrent job at a time. Job records live in the running MCP server process.
 - `developer_workspace_diagnostics` — inspect workspace, platform and known sandbox limits.
-- `developer_host_status` — read-only comparison of SHA-256 hashes for seven pinned source/installed MCP files and the registered host launcher. Does not read arbitrary host paths.
-- `developer_host_maintenance` — requires a local one-use five-minute grant and an explicit `reload` or `sync_and_reload` action. For synchronization it verifies all seven provided source hashes before writing only the fixed installed files, then reloads the gateway without restarting the tunnel.
+- `developer_host_status` — read-only comparison of SHA-256 hashes for ten pinned source/installed MCP files and the registered host launcher. Does not read arbitrary host paths.
+- `developer_host_maintenance` — requires a local one-use five-minute grant and an explicit `reload` or `sync_and_reload` action. For synchronization it verifies all ten provided source hashes before writing only the fixed installed files, then reloads the gateway without restarting the tunnel.
 
 All developer paths are relative to the selected workspace; symlink paths and `.git` access through file editing are rejected. Git commands use a restricted environment and disable external diff drivers, text converters, hooks, fsmonitor, and submodule recursion. The Git tools require a checkout whose `.git` is an actual directory and reject linked worktrees/submodules that use `.git` redirection files. The ordinary Filesystem MCP write/edit tools do not enforce SHA-256 checks; use `developer_edit_checked` when stale edits matter. Files larger than 1 MB cannot be edited by `developer_edit_checked` or `developer_apply_patch`. Git operations are read-only. No general host shell, arbitrary host filesystem editing, network execution, or Docker access has been added.
 
@@ -160,7 +205,7 @@ Supergateway 4.2.1 and the pinned servers expose the legacy MCP `initialize` / `
 
 ## Tests
 
-Run `npm test` for the local automated suite (44 passing tests as of v1.1.0). It includes sandbox-safe developer tool checks and an actual stdio JSON-RPC exchange, plus mocked launcher supervision tests. It does not require a public tunnel. For an isolated installer smoke test run `MCP_WORKSPACE_INSTALL_DIR=/tmp/mcp-workspace-install/bin ./install.sh`, then execute the installed command with `--help` only if the launcher supports it; otherwise test the installed developer server through stdio. A real public Cloudflare tunnel cannot be exercised from the offline nanosandbox.
+Run `npm test` for the local automated suite (50 passing tests as of v1.2.0). It includes sandbox-safe developer tool checks and an actual stdio JSON-RPC exchange, plus mocked launcher supervision tests. It does not require a public tunnel. For an isolated installer smoke test run `MCP_WORKSPACE_INSTALL_DIR=/tmp/mcp-workspace-install/bin ./install.sh`, then execute the installed command with `--help` only if the launcher supports it; otherwise test the installed developer server through stdio. A real public Cloudflare tunnel cannot be exercised from the offline nanosandbox.
 
 To use a different local port:
 

@@ -12,6 +12,9 @@ install -m 0644 "$project_dir/lib/devtools-server.js" "$install_dir/../lib/mcp-w
 install -m 0644 "$project_dir/lib/host-control.js" "$install_dir/../lib/mcp-workspace/host-control.js"
 install -m 0644 "$project_dir/lib/devtools-v1.js" "$install_dir/../lib/mcp-workspace/devtools-v1.js"
 install -m 0644 "$project_dir/lib/jobs.js" "$install_dir/../lib/mcp-workspace/jobs.js"
+install -m 0644 "$project_dir/lib/video-core.js" "$install_dir/../lib/mcp-workspace/video-core.js"
+install -m 0644 "$project_dir/lib/video-server.js" "$install_dir/../lib/mcp-workspace/video-server.js"
+install -m 0644 "$project_dir/lib/video-worker.js" "$install_dir/../lib/mcp-workspace/video-worker.js"
 printf 'Installed: %s/mcp-workspace\n' "$install_dir"
 case ":$PATH:" in
   *":$install_dir:"*) ;;

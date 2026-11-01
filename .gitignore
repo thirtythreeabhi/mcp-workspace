@@ -1,1 +1,4 @@
 .DS_Store
+
+# Generated video render job state and temporary artifacts
+.mcp-video/
