@@ -36,7 +36,7 @@ test('unsafe traversal, symlink, missing output dir, invalid extensions, overwri
  assert.throws(()=>v.validate(root,{width:639,clips:[{path:'one.mp4',end:1}]}),/DIMENSIONS/);
  assert.throws(()=>v.validate(root,{clips:[{path:'one.mp4',end:1,speed:5}]}),/INVALID_SPEED/);
 });
-test('stdio video MCP lists ten tools and keeps existing workspace separate',async t=>{
+test('stdio video MCP lists workflow and render tools and keeps existing workspace separate',async t=>{
  const root=fixture(t);
  const child=cp.spawn(process.execPath,[path.join(__dirname,'../lib/video-server.js'),root],{stdio:['pipe','pipe','pipe']});
  t.after(()=>child.kill());
@@ -50,12 +50,63 @@ test('stdio video MCP lists ten tools and keeps existing workspace separate',asy
  for(let i=0;i<100&&result.trim().split('\n').length<3;i++)await new Promise(resolve=>setTimeout(resolve,10));
  const lines=result.trim().split('\n').map(JSON.parse);
  assert.equal(lines.length,3);
- assert.equal(lines[0].result.serverInfo.version,'1.2.0');
- assert.equal(lines[1].result.tools.length,10);
+ assert.equal(lines[0].result.serverInfo.version,'1.3.0');
+ assert.equal(lines[1].result.tools.length,18);
+ for(const name of ['project_state','audio_timing','review','remotion_compositions'])assert.ok(lines[1].result.tools.some(x=>x.name===name));
+ assert.ok(lines[1].result.tools.some(x=>x.name==='capture_page'));
+ assert.ok(lines[1].result.tools.some(x=>x.name==='remotion_status'));
+ assert.ok(lines[1].result.tools.some(x=>x.name==='remotion_render_start'));
  assert.ok(lines[1].result.tools.some(x=>x.name==='render_start'));
  assert.ok(!lines[1].result.tools.some(x=>x.name==='filesystem_write_file'));
  assert.ok(fs.existsSync(path.join(root,'example.timeline.json')));
 });
+
+test('browser capture is disabled by default and validates local-only routes and output constraints',t=>{
+ const root=fixture(t);
+ const env={MCP_WORKSPACE_CAPTURE_ORIGIN:'http://127.0.0.1:3000'};
+ assert.throws(()=>v.captureSettings({outputPath:'capture.png'},{}),/CAPTURE_DISABLED/);
+ assert.equal(v.captureSettings({route:'/en/recruiter/dashboard',outputPath:'capture.png'},env).url,
+  'http://127.0.0.1:3000/en/recruiter/dashboard');
+ for(const origin of [
+  'https://127.0.0.1:3000','http://example.com:3000','http://192.168.1.1:3000',
+  'http://127.0.0.1:3000/private','http://user:pw@127.0.0.1:3000','http://localhost'
+ ])assert.throws(()=>v.captureSettings({outputPath:'capture.png'},{MCP_WORKSPACE_CAPTURE_ORIGIN:origin}),/INVALID_CAPTURE_ORIGIN/);
+ for(const route of ['//private','/../private','/api/secret','/en?key=x','/en#foo','http://remote','/foo//bar']){
+  assert.throws(()=>v.captureSettings({route,outputPath:'capture.png'},env),/INVALID_CAPTURE_ROUTE/);
+ }
+ assert.throws(()=>v.captureSettings({outputPath:'capture.jpg'},env),/INVALID_CAPTURE_OUTPUT/);
+ assert.throws(()=>v.captureSettings({outputPath:'capture.png',width:10000},env),/INVALID_WIDTH/);
+ assert.equal(path.basename(v.dest(root,'new.png',new Set(['.png']))),'new.png');
+});
+
+test('browser capture uses clean Chrome profile and promotes only new verified PNG files',async t=>{
+ const root=fixture(t),env={MCP_WORKSPACE_CAPTURE_ORIGIN:'http://localhost:3000'};
+ const args={route:'/en',outputPath:'screenshot.png',width:640,height:480,waitMs:500};
+ let commandArgs,commandName;
+ const runner=async(bin,argv)=>{
+  commandName=bin;commandArgs=argv;
+  const output=argv.find(s=>s.startsWith('--screenshot=')).slice('--screenshot='.length);
+  // Test runner simulates Chrome's PNG envelope; no external browser needed.
+  const png=Buffer.alloc(130);
+  Buffer.from([137,80,78,71,13,10,26,10]).copy(png,0);
+  png.write('IHDR',12);
+  png.writeUInt32BE(640,16);png.writeUInt32BE(480,20);
+  fs.writeFileSync(output,png);
+ };
+ const result=await v.capturePage(root,args,{env,runner});
+ assert.equal(commandName,'google-chrome');
+ assert.ok(commandArgs.includes('http://localhost:3000/en'));
+ assert.ok(commandArgs.some(s=>s.startsWith('--user-data-dir=')));
+ assert.ok(commandArgs.some(s=>s.startsWith('--host-resolver-rules=')));
+ assert.ok(!commandArgs.includes('--no-sandbox'));
+ assert.deepEqual({width:result.width,height:result.height},{width:640,height:480});
+ assert.ok(fs.existsSync(path.join(root,'screenshot.png')));
+ await assert.rejects(v.capturePage(root,args,{env,runner}),/OUTPUT_EXISTS/);
+ await assert.rejects(v.capturePage(root,{...args,outputPath:'../elsewhere.png'},{env,runner}),/UNSAFE_PATH/);
+ const noFile=async()=>{};
+ await assert.rejects(v.capturePage(root,{...args,outputPath:'missing.png'},{env,runner:noFile}),/ENOENT/);
+});
+
 const ffmpegAvailable=cp.spawnSync('ffmpeg',['-version'],{timeout:5000}).status===0
  &&cp.spawnSync('ffprobe',['-version'],{timeout:5000}).status===0;
 test('real FFmpeg integration: probe, preview, render, inspect output', {skip:!ffmpegAvailable,timeout:45000},async t=>{

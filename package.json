@@ -1,6 +1,6 @@
 {
   "name": "mcp-workspace",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "One-command workspace MCP with Filesystem, Terminal, developer tools, and Cloudflare or ngrok tunnels",
   "bin": {
     "mcp-workspace": "./bin/mcp-workspace"
@@ -15,7 +15,11 @@
     "lib/jobs.js",
     "lib/video-core.js",
     "lib/video-server.js",
+    "lib/video-workflow.js",
     "lib/video-worker.js",
+    "lib/resources.js",
+    "lib/remotion-core.js",
+    "lib/remotion-worker.js",
     "README.md"
   ],
   "keywords": [

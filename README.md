@@ -97,12 +97,27 @@ Add **`https://mcp.example.com/workspace/mcp`** to ChatGPT once. With this mode 
 
 **Security:** The stable URL is publicly reachable and authentication remains disabled by design. Anyone with that URL can invoke the exposed tools. Prefer launching in a single, deliberately chosen project workspace rather than your entire Downloads folder. Never run two different workspaces on the same stable endpoint without knowing which one ChatGPT will access.
 
+
+## Host-side Remotion rendering and installation — v1.3.0
+
+The Video MCP can install a **fixed, pinned Remotion project** using Ubuntu's network, and render with the host's CPU/RAM instead of the offline nanosandbox. No general-purpose host-shell command is exposed. Dependency installation uses `npm install --ignore-scripts --no-audit --no-fund --no-progress --save=false` with a fixed npm registry and validates the project manifest first. Current pinned Remotion and @remotion/cli version: **4.0.539**.
+
+The starter project is in `~/Downloads/remotion-project`, outside the application codebase. It contains `src/index.ts`, `src/root.tsx` and `src/talentstream.tsx`, an editable 10-second `TalentStreamOpening` composition, a draft-only `TalentStreamV4` placeholder, and local narration/music under `public/`. The full 62-second Remotion film has **not** been designed or rendered yet.
+
+**Important activation step:** video host execution is off by default. Run `./install.sh` from the updated `mcp-workspace` checkout, stop the existing server, and relaunch `mcp-workspace` with environment variable `MCP_WORKSPACE_REMOTION_HOST_ENABLED=1` (and your existing ngrok URL). Restarting interrupts the live MCP connection. The updated Video MCP then exposes `video_remotion_status`, `video_remotion_install_start`, and `video_remotion_render_start`. Call `install_start` once, poll `video_render_status` and `video_render_logs` using its returned job ID, and render only after `remotion_status` confirms installation. Use `video_render_cancel` to abort. This calls Ubuntu host npm; it does not pass through nanosandbox. No arbitrary npm packages, scripts or host command args are accepted.
+
+The Remotion worker does not inject process CPU, memory, Node heap, concurrency or render-duration ceilings. Rendering is governed by Ubuntu, Chrome, available hardware and any applicable OS-level restrictions. It can exhaust host RAM/CPU under load. The existing nanosandbox terminal still inherits independent sandbox/provider limits even though this version omits the explicit `--cpu`, `--memory` and `--timeout` flags from its launcher configuration.
+
+**Security:** both MCP endpoints intentionally have no authentication, and Remotion executes JavaScript from the project directory. A party with access to the public MCP connection and filesystem write capability could modify trusted project source and trigger code execution with the server user's privileges. The opt-in environment flag is **not authentication**. Do not enable host rendering on a publicly discoverable/shared endpoint, and never run this server as root. Use a private tunnel or network access control if you enable host operations.
+
+Remotion has a separate license for some commercial usage; review the current terms at https://www.remotion.dev/license before commercial deployments.
+
 ## Separate Video MCP — v1.2.0
 
 The same ngrok or Cloudflare tunnel serves two MCP endpoints on one local port:
 
 - **Workspace:** `https://YOUR-ASSIGNED-DOMAIN/workspace/mcp` — unchanged filesystem, terminal, developer tools
-- **Video:** `https://YOUR-ASSIGNED-DOMAIN/video/mcp` — a separate set of ten tools with the `video_` prefix
+- **Video:** `https://YOUR-ASSIGNED-DOMAIN/video/mcp` — a separate set of eleven tools with the `video_` prefix
 
 You can add the video endpoint as a second ChatGPT custom MCP server. **Authentication stays disabled** on both endpoints. You do not need a second ngrok account, domain, tunnel or local port. Supergateway routes the paths, and the launcher verifies both endpoints before announcing readiness.
 
@@ -112,6 +127,7 @@ Video tools:
 
 - `video_capabilities` — check installed FFmpeg and FFprobe
 - `video_probe` — inspect duration, resolution, codecs and audio
+- `video_capture_page` — optional, locally allowlisted Chrome capture into a workspace PNG (see setup below)
 - `video_preview_frame` / `video_contact_sheet` — return a single JPEG frame or an eight-frame visual montage
 - `video_timeline_save` / `video_timeline_read` — save and edit JSON timelines with SHA-256 checks
 - `video_render_start` / `video_render_status` / `video_render_logs` / `video_render_cancel` — render, monitor and cancel background MP4 jobs
@@ -142,7 +158,33 @@ Inputs and outputs must stay inside the selected workspace; symlinks, path trave
 
 The source changes do **not** hot-reload your active connection. When ready, stop `mcp-workspace`, run `cd ~/Downloads/mcp-workspace && ./install.sh`, and restart it with the same ngrok settings. Refresh the existing workspace connector, then connect the second URL ending in `/video/mcp`.
 
-## Developer tools (v1.2.0)
+
+### Local frontend screenshots for product videos
+
+The Video MCP source now includes **video_capture_page**, an opt-in Chrome screenshot tool for local development apps. It creates a new PNG under the workspace and returns its relative path, pixel dimensions and SHA-256. It does not use a signed-in Chrome profile or log into an application.
+
+Because this MCP endpoint has no authentication, browser capture is **disabled by default**. To enable it for a specific, locally running dev server, set the capture origin when launching mcp-workspace on the actual Ubuntu host:
+
+~~~bash
+# Start the app yourself in a separate terminal, using safe demo data.
+# Then launch the MCP server from Downloads, retaining your usual ngrok settings.
+cd ~/Downloads
+MCP_WORKSPACE_CAPTURE_ORIGIN=http://127.0.0.1:3000 mcp-workspace
+~~~
+
+The origin must be http://127.0.0.1:PORT or http://localhost:PORT, without credentials, query strings or arbitrary hostnames. The tool accepts only simple pathnames such as /en and /en/recruiter/dashboard. Calls can specify outputPath, width, height and waitMs (0–6000). Example arguments:
+
+~~~json
+{"route":"/en","outputPath":"Organized/Videos/Generated/TalentStream-AI/marketing-capture.png","width":1600,"height":900,"waitMs":1800}
+~~~
+
+The parent directory must exist and the screenshot must not exist yet. Chrome runs in a temporary fresh profile with background networking disabled and a localhost-only hostname resolver rule; it doesn't reuse your interactive browser session. Auth-protected pages may redirect to a sign-in screen. Capturing real recruiter screens requires an explicitly configured demo account/session or safe mock mode in the application; this tool does not bypass authentication.
+
+**Operational constraints:** The tool executes Chrome in the host-side video server, not the nanosandbox terminal; headless Chrome cannot run in the current nanosandbox because socket creation is denied. It requires google-chrome installed on the Ubuntu host, a reachable local development app, a host-side source sync/reload and a ChatGPT plugin tool-schema refresh. The existing locally approved maintenance-grant procedure remains necessary for hot deployment. Chrome will process the locally served app and any subresources it requests; the resolver restriction is defense-in-depth, not a security boundary against an untrusted application. Only point it to an app that you trust.
+
+Screenshots are inputs for the existing FFmpeg/Python compositing workflow, not automated UI tours: this tool doesn't click buttons or create authenticated sessions. Your Video MCP's existing timeline functions remain useful for cutting and joining the rendered MP4s.
+
+## Developer tools (v1.3.0)
 
 The first-party stdio developer server exposes fourteen workspace-scoped tools plus two narrowly scoped host-maintenance tools with explicit descriptions and structured JSON responses:
 
@@ -157,8 +199,8 @@ The first-party stdio developer server exposes fourteen workspace-scoped tools p
 - `developer_project_overview` — inspect the top-level structure, detected stack, package manager, scripts, test infrastructure and Git state.
 - `developer_job_start` / `developer_job_status` / `developer_job_logs` / `developer_job_cancel` — launch, inspect and cancel managed nanosandbox jobs by ID, one concurrent job at a time. Job records live in the running MCP server process.
 - `developer_workspace_diagnostics` — inspect workspace, platform and known sandbox limits.
-- `developer_host_status` — read-only comparison of SHA-256 hashes for ten pinned source/installed MCP files and the registered host launcher. Does not read arbitrary host paths.
-- `developer_host_maintenance` — requires a local one-use five-minute grant and an explicit `reload` or `sync_and_reload` action. For synchronization it verifies all ten provided source hashes before writing only the fixed installed files, then reloads the gateway without restarting the tunnel.
+- `developer_host_status` — read-only comparison of SHA-256 hashes for thirteen pinned source/installed MCP files and the registered host launcher. Does not read arbitrary host paths.
+- `developer_host_maintenance` — requires a local one-use five-minute grant and an explicit `reload` or `sync_and_reload` action. For synchronization it verifies all thirteen provided source hashes before writing only the fixed installed files, then reloads the gateway without restarting the tunnel.
 
 All developer paths are relative to the selected workspace; symlink paths and `.git` access through file editing are rejected. Git commands use a restricted environment and disable external diff drivers, text converters, hooks, fsmonitor, and submodule recursion. The Git tools require a checkout whose `.git` is an actual directory and reject linked worktrees/submodules that use `.git` redirection files. The ordinary Filesystem MCP write/edit tools do not enforce SHA-256 checks; use `developer_edit_checked` when stale edits matter. Files larger than 1 MB cannot be edited by `developer_edit_checked` or `developer_apply_patch`. Git operations are read-only. No general host shell, arbitrary host filesystem editing, network execution, or Docker access has been added.
 
@@ -205,7 +247,7 @@ Supergateway 4.2.1 and the pinned servers expose the legacy MCP `initialize` / `
 
 ## Tests
 
-Run `npm test` for the local automated suite (50 passing tests as of v1.2.0). It includes sandbox-safe developer tool checks and an actual stdio JSON-RPC exchange, plus mocked launcher supervision tests. It does not require a public tunnel. For an isolated installer smoke test run `MCP_WORKSPACE_INSTALL_DIR=/tmp/mcp-workspace-install/bin ./install.sh`, then execute the installed command with `--help` only if the launcher supports it; otherwise test the installed developer server through stdio. A real public Cloudflare tunnel cannot be exercised from the offline nanosandbox.
+Run `npm test` for the local automated suite (55 passing tests as of v1.3.0). It includes sandbox-safe developer tool checks and an actual stdio JSON-RPC exchange, plus mocked launcher supervision tests. It does not require a public tunnel. For an isolated installer smoke test run `MCP_WORKSPACE_INSTALL_DIR=/tmp/mcp-workspace-install/bin ./install.sh`, then execute the installed command with `--help` only if the launcher supports it; otherwise test the installed developer server through stdio. A real public Cloudflare tunnel cannot be exercised from the offline nanosandbox.
 
 To use a different local port:
 

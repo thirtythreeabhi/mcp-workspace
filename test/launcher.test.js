@@ -32,6 +32,9 @@ test('configuration pins packages and retains sandbox boundaries', () => {
   assert.ok(servers.terminal.args.some(value => /@0\.3\.3$/.test(value)));
   assert.ok(servers.filesystem.args.includes('/work'));
   assert.ok(servers.terminal.args.includes('--read-only'));
+  assert.ok(!servers.terminal.args.includes('--memory'));
+  assert.ok(!servers.terminal.args.includes('--cpu'));
+  assert.ok(!servers.terminal.args.includes('--timeout'));
   assert.equal(c.mcpServers.video.command, process.execPath);
   assert.equal(c.mcpServers.video.toolPrefix, 'video_');
   assert.match(c.mcpServers.video.args[0], /video-server\.js$/);
@@ -276,7 +279,7 @@ test('video endpoint readiness independently checks its ten prefixed tools', asy
     if(step===1)return new Response(JSON.stringify({jsonrpc:'2.0',id:1,result:{protocolVersion:'2025-11-25'}}),{status:200});
     if(step===2)return new Response(null,{status:202});
     return new Response('event: message\ndata: '+JSON.stringify({jsonrpc:'2.0',id:2,result:{tools:[
-      'capabilities','probe','preview_frame','contact_sheet','timeline_save','timeline_read',
+      'capabilities','probe','preview_frame','contact_sheet','review','audio_timing','project_state','remotion_compositions','remotion_status','remotion_install_start','remotion_render_start','timeline_save','timeline_read',
       'render_start','render_status','render_logs','render_cancel'
     ].map(name=>({name:'video_'+name}))}})+'\n\n',{status:200});
   };

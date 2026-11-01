@@ -27,7 +27,7 @@ function expectations(status) {
 test('host status compares only the fixed installation files', t => {
   const { workspace, opts } = setup(t);
   const status = host.hostStatus(workspace, opts);
-  assert.equal(status.files.length, 10);
+  assert.equal(status.files.length, host.FILES.length);
   assert.equal(status.running, false);
   assert.ok(status.files.every(entry => entry.matches === false && entry.installedSha256 === null));
   assert.deepEqual(status.files.map(entry => entry.file), host.FILES.map(file => file[0]));
@@ -60,7 +60,7 @@ test('sync requires pinned hashes, installs only the fixed files, and schedules 
   const result = host.maintain(workspace, {
     action: 'sync_and_reload', token, expectedSources: expectations(original),
   }, { ...opts, signal: pid => signaled.push(pid) });
-  assert.equal(result.filesUpdated.length, 10);
+  assert.equal(result.filesUpdated.length, host.FILES.length);
   assert.ok(host.hostStatus(workspace, opts).files.every(entry => entry.matches));
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.deepEqual(signaled, [process.pid]);
