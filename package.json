@@ -8,6 +8,7 @@
   "files": [
     "bin/mcp-workspace",
     "lib/launcher.js",
+    "lib/ollama-server.js",
     "lib/devtools-core.js",
     "lib/devtools-server.js",
     "lib/host-control.js",

@@ -38,6 +38,7 @@ test('configuration pins packages and retains sandbox boundaries', () => {
   assert.equal(c.mcpServers.video.command, process.execPath);
   assert.equal(c.mcpServers.video.toolPrefix, 'video_');
   assert.match(c.mcpServers.video.args[0], /video-server\.js$/);
+  assert.equal(c.mcpServers.video.env.MCP_WORKSPACE_REMOTION_HOST_ENABLED, '1');
   assert.equal(servers.developer.command, process.execPath);
   assert.match(servers.developer.args[0], /devtools-server\.js$/);
   assert.equal(VERSIONS.supergateway, '4.2.1');
@@ -91,7 +92,7 @@ test('MCP readiness requires initialize and both prefixed tool families', async 
     if (step > 1) assert.equal(options.headers['mcp-protocol-version'], '2025-11-25');
     if (step === 1) return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-11-25' } }), { status: 200, headers: { 'mcp-session-id': 'test' } });
     if (step === 2) return new Response(null, { status: 202 });
-    return new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: { tools: [{ name: 'filesystem_read_file' }, { name: 'terminal_run' }, { name: 'developer_code_search' }, { name: 'developer_read_lines' }, { name: 'developer_apply_patch' }, { name: 'developer_apply_changes' }, { name: 'developer_project_overview' }, { name: 'developer_job_start' }, { name: 'developer_job_status' }, { name: 'developer_job_logs' }, { name: 'developer_job_cancel' }, { name: 'developer_host_status' }, { name: 'developer_host_maintenance' }] } })}\n\n`, { status: 200 });
+    return new Response(`event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: { tools: [{ name: 'filesystem_read_file' }, { name: 'terminal_run' }, { name: 'ollama_list_models' }, { name: 'ollama_chat' }, { name: 'developer_code_search' }, { name: 'developer_read_lines' }, { name: 'developer_apply_patch' }, { name: 'developer_apply_changes' }, { name: 'developer_project_overview' }, { name: 'developer_job_start' }, { name: 'developer_job_status' }, { name: 'developer_job_logs' }, { name: 'developer_job_cancel' }, { name: 'developer_host_status' }, { name: 'developer_host_maintenance' }] } })}\n\n`, { status: 200 });
   };
   t.after(() => { global.fetch = original; });
   assert.equal(await mcpReady('http://127.0.0.1:8787/workspace/mcp'), true);

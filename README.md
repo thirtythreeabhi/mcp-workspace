@@ -33,6 +33,30 @@ The launcher uses these exact published versions:
 - [@modelcontextprotocol/server-filesystem 2.1.0](https://www.npmjs.com/package/%40modelcontextprotocol/server-filesystem), restricted to the current directory
 - [nanosandbox-mcp 0.3.3](https://www.npmjs.com/package/nanosandbox-mcp) for sandboxed terminal commands
 
+## Use the home PC's Ollama model from a remote app
+
+The workspace MCP endpoint now includes `ollama_list_models` and `ollama_chat`. These call the host's local Ollama API at `http://127.0.0.1:11434`; Ollama must already be installed and running on the host. The chat tool returns a complete, non-streaming response. It does not expose Ollama's general HTTP API.
+
+Set an access token once on the Ubuntu host:
+
+```bash
+mkdir -p ~/.config/mcp-workspace
+openssl rand -hex 32 > ~/.config/mcp-workspace/ollama-token
+chmod 600 ~/.config/mcp-workspace/ollama-token
+```
+
+The launcher reads that token at startup and passes it only to the Ollama MCP tool process. Keep a copy in the local app's secret environment (for example, `OLLAMA_MCP_TOKEN`) and pass it as `accessToken` when calling either tool. Do not commit it or paste it into source code.
+
+To install the updated launcher and start it from the project you intend to expose:
+
+```bash
+cd ~/Downloads/mcp-workspace && ./install.sh
+cd ~/Downloads/your-project
+MCP_WORKSPACE_PORT=8788 MCP_WORKSPACE_NGROK_URL=https://YOUR-ASSIGNED-NAME.ngrok-free.dev ~/.local/bin/mcp-workspace
+```
+
+Use your existing assigned ngrok hostname. The endpoint remains `/workspace/mcp`. From the office app, connect with an MCP Streamable HTTP client and invoke `ollama_list_models` or `ollama_chat`; the workspace exposes tools, not a directly compatible OpenAI-style Ollama URL. Launch from a dedicated project folder so the filesystem tools are scoped to that folder.
+
 ## Startup and shutdown
 
 The launcher checks Node.js and required commands, validates the port, and fails if the local port is occupied. It writes the gateway configuration to a private temporary directory, then starts Supergateway and the selected tunnel provider **concurrently**. Local and public MCP initialize / `tools/list` probes also run concurrently, checking both the workspace tools and the separate Video MCP tool list. It announces the URLs only after all local and public checks succeed. Startup stages and elapsed time print to stderr. Both probes have 90-second readiness windows; they are no longer sequential. The pinned `npx` packages prefer the npm cache on repeat launches.
@@ -104,7 +128,9 @@ The Video MCP can install a **fixed, pinned Remotion project** using Ubuntu's ne
 
 The starter project is in `~/Downloads/remotion-project`, outside the application codebase. It contains `src/index.ts`, `src/root.tsx` and `src/talentstream.tsx`, an editable 10-second `TalentStreamOpening` composition, a draft-only `TalentStreamV4` placeholder, and local narration/music under `public/`. The full 62-second Remotion film has **not** been designed or rendered yet.
 
-**Important activation step:** video host execution is off by default. Run `./install.sh` from the updated `mcp-workspace` checkout, stop the existing server, and relaunch `mcp-workspace` with environment variable `MCP_WORKSPACE_REMOTION_HOST_ENABLED=1` (and your existing ngrok URL). Restarting interrupts the live MCP connection. The updated Video MCP then exposes `video_remotion_status`, `video_remotion_install_start`, and `video_remotion_render_start`. Call `install_start` once, poll `video_render_status` and `video_render_logs` using its returned job ID, and render only after `remotion_status` confirms installation. Use `video_render_cancel` to abort. This calls Ubuntu host npm; it does not pass through nanosandbox. No arbitrary npm packages, scripts or host command args are accepted.
+**Host rendering:** the Video MCP launches with Remotion host rendering enabled. `video_remotion_install_start` installs only the fixed, validated project dependencies; `video_remotion_render_start` runs the allowlisted compositions. Call `install_start` once, poll `video_render_status` and `video_render_logs` using its returned job ID, and render only after `remotion_status` confirms installation. Use `video_render_cancel` to abort. This calls Ubuntu host npm and uses host CPU/RAM; it does not pass through nanosandbox. No arbitrary npm packages, scripts or host command args are accepted.
+
+The launcher terminal prints Video MCP tool calls and concise FFmpeg/Remotion job events, including render progress. Detailed output remains available through the render log tools and is also kept in the gateway log.
 
 The Remotion worker does not inject process CPU, memory, Node heap, concurrency or render-duration ceilings. Rendering is governed by Ubuntu, Chrome, available hardware and any applicable OS-level restrictions. It can exhaust host RAM/CPU under load. The existing nanosandbox terminal still inherits independent sandbox/provider limits even though this version omits the explicit `--cpu`, `--memory` and `--timeout` flags from its launcher configuration.
 
